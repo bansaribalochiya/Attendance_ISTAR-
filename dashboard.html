@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Student Attendance & Grades — Live Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0b0f17;
+    --panel: #121826;
+    --panel-2: #182033;
+    --border: #233048;
+    --text: #e6ecf5;
+    --muted: #8a96ad;
+    --accent: #5b8def;
+    --accent-2: #8b5cf6;
+    --good: #22c55e;
+    --bad: #ef4444;
+    --warn: #f59e0b;
+    --shadow: 0 6px 24px rgba(0,0,0,0.35);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: radial-gradient(1200px 600px at 10% -10%, #1a2440 0%, transparent 60%),
+                radial-gradient(900px 500px at 100% 0%, #2a1a40 0%, transparent 55%),
+                var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif;
+    min-height: 100vh;
+  }
+  .container {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 28px 22px 60px;
+  }
+  header h1 {
+    font-size: 24px;
+    margin: 0 0 4px;
+    letter-spacing: -0.01em;
+  }
+  header p.sub {
+    margin: 0 0 22px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+
+  /* URL Bar */
+  .url-bar {
+    display: flex;
+    gap: 10px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 12px;
+    box-shadow: var(--shadow);
+  }
+  .url-bar input {
+    flex: 1;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    color: var(--text);
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.15s ease;
+  }
+  .url-bar input:focus { border-color: var(--accent); }
+  .url-bar button {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #fff;
+    border: none;
+    padding: 12px 20px;
+    border-radius: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 14px;
+    white-space: nowrap;
+    transition: transform 0.1s ease, opacity 0.15s ease;
+  }
+  .url-bar button:hover { transform: translateY(-1px); }
+  .url-bar button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+  .url-hint {
+    color: var(--muted);
+    font-size: 12px;
+    margin: 8px 4px 0;
+  }
+  .status-line {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 14px 4px 4px;
+    font-size: 13px;
+    min-height: 20px;
+  }
+  .status-line .stamp { color: var(--muted); }
+  .status-line .err { color: var(--bad); }
+  .spinner {
+    width: 16px; height: 16px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .hidden { display: none !important; }
+
+  /* Summary */
+  .summary {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin: 22px 0;
+  }
+  .stat {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px;
+    box-shadow: var(--shadow);
+  }
+  .stat .label {
+    color: var(--muted);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 8px;
+  }
+  .stat .value {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  .stat .sub {
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 4px;
+  }
+
+  /* Insights */
+  .section-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 28px 0 12px;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-title::before {
+    content: "";
+    width: 4px; height: 18px;
+    background: linear-gradient(180deg, var(--accent), var(--accent-2));
+    border-radius: 2px;
+  }
+  .insights {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+  .insight {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 12px;
+    padding: 14px 16px;
+  }
+  .insight.good { border-left-color: var(--good); }
+  .insight.bad { border-left-color: var(--bad); }
+  .insight.warn { border-left-color: var(--warn); }
+  .insight .head {
+    font-weight: 700;
+    margin-bottom: 4px;
+    font-size: 14px;
+  }
+  .insight .body {
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  /* Charts */
+  .charts {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    margin-top: 8px;
+  }
+  .chart-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px 18px 18px;
+    box-shadow: var(--shadow);
+  }
+  .chart-card h3 {
+    font-size: 14px;
+    margin: 0 0 12px;
+    color: var(--text);
+    font-weight: 600;
+  }
+  .chart-card .chart-sub {
+    color: var(--muted);
+    font-size: 12px;
+    margin: -8px 0 12px;
+  }
+  .chart-wrap {
+    position: relative;
+    height: 280px;
+  }
+
+  @media (max-width: 800px) {
+    .summary { grid-template-columns: repeat(2, 1fr); }
+    .insights { grid-template-columns: 1fr; }
+    .charts { grid-template-columns: 1fr; }
+    .url-bar { flex-direction: column; }
+    .url-bar button { width: 100%; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>Student Attendance & Grades — Live Dashboard</h1>
+    <p class="sub">Paste a Google Sheet share URL below. The sheet must contain the standard columns: Roll_No, Name, Course, Attendance_Pct, Classes_Held, Classes_Attended, Mid_Sem, Final, Status.</p>
+  </header>
+
+  <div class="url-bar">
+    <input id="sheetUrl" type="text"
+      placeholder="https://docs.google.com/spreadsheets/d/SOME_ID/edit?usp=sharing"
+      value="https://docs.google.com/spreadsheets/d/1nAcLpaw3DtmqHwRLh82DpOH-T5UczwuyDrMdOCCOC2I/edit?usp=sharing" />
+    <button id="loadBtn">Load Data</button>
+  </div>
+  <div class="url-hint">Note: the sheet must be shared as "Anyone with the link can view" for the dashboard to fetch it.</div>
+
+  <div class="status-line">
+    <div id="spinner" class="spinner hidden"></div>
+    <div id="status" class="stamp">Click "Load Data" to fetch the sheet.</div>
+  </div>
+
+  <div id="dashboard" class="hidden">
+    <div class="summary" id="summary"></div>
+
+    <div class="section-title">Insights</div>
+    <div class="insights" id="insights"></div>
+
+    <div class="section-title">Charts</div>
+    <div class="charts">
+      <div class="chart-card">
+        <h3>Students per Course</h3>
+        <div class="chart-sub">Headcount enrolled in each subject.</div>
+        <div class="chart-wrap"><canvas id="chartCourseCount"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Pass vs Fail</h3>
+        <div class="chart-sub">Overall outcome distribution.</div>
+        <div class="chart-wrap"><canvas id="chartPassFail"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Average Mid-Sem & Final by Course</h3>
+        <div class="chart-sub">Mean exam scores grouped by subject.</div>
+        <div class="chart-wrap"><canvas id="chartScoresByCourse"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Attendance Distribution</h3>
+        <div class="chart-sub">Number of students in each attendance band.</div>
+        <div class="chart-wrap"><canvas id="chartAttendanceDist"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Attendance vs Final Score</h3>
+        <div class="chart-sub">Each point is a student — green = Pass, red = Fail.</div>
+        <div class="chart-wrap"><canvas id="chartScatter"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Pass Rate by Course (%)</h3>
+        <div class="chart-sub">Share of students who passed in each course.</div>
+        <div class="chart-wrap"><canvas id="chartPassRate"></canvas></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const charts = {};
+  const COURSE_COLORS = {
+    DBMS: '#5b8def',
+    TOC:  '#8b5cf6',
+    SE:   '#22c55e',
+    CN:   '#f59e0b',
+    DSA:  '#ef4444',
+    OS:   '#06b6d4',
+  };
+
+  Chart.defaults.color = '#8a96ad';
+  Chart.defaults.borderColor = '#233048';
+  Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+
+  function extractSheetId(url) {
+    const m = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+    return m ? m[1] : null;
+  }
+
+  function setStatus(text, kind) {
+    const el = document.getElementById('status');
+    el.textContent = text;
+    el.className = kind === 'error' ? 'err' : 'stamp';
+  }
+
+  function showSpinner(show) {
+    document.getElementById('spinner').classList.toggle('hidden', !show);
+  }
+
+  function extractGid(url) {
+    const m = url.match(/[#?&]gid=([0-9]+)/);
+    return m ? m[1] : '0';
+  }
+
+  async function loadData() {
+    const url = document.getElementById('sheetUrl').value.trim();
+    const id = extractSheetId(url);
+    if (!id) {
+      setStatus('Could not extract a spreadsheet ID from that URL.', 'error');
+      return;
+    }
+    const gid = extractGid(url);
+    // gviz endpoint returns CSV directly (200) without a redirect chain,
+    // which is what browser fetch needs. The /export endpoint 307-redirects
+    // to googleusercontent.com and gets blocked by CORS in many cases.
+    const csvUrl = `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&gid=${gid}`;
+    const btn = document.getElementById('loadBtn');
+    btn.disabled = true;
+    showSpinner(true);
+    setStatus('Fetching sheet…');
+
+    try {
+      const res = await fetch(csvUrl);
+      if (!res.ok) {
+        if (res.status === 404) throw new Error(`Sheet not found. Check the URL and that "Anyone with the link" can view.`);
+        throw new Error(`HTTP ${res.status} — make sure the sheet is shared as "Anyone with the link can view".`);
+      }
+      const text = await res.text();
+      if (text.trim().startsWith('<')) {
+        throw new Error('Got HTML instead of CSV — the sheet is not publicly accessible.');
+      }
+      const parsed = Papa.parse(text, { header: true, dynamicTyping: true, skipEmptyLines: true });
+      if (!parsed.data || !parsed.data.length) throw new Error('No rows parsed from the sheet.');
+
+      const rows = parsed.data.filter(r => r.Roll_No);
+      if (!rows.length) throw new Error('No rows with a Roll_No column were found. Check the sheet headers.');
+      render(rows);
+      const stamp = new Date().toLocaleString();
+      setStatus(`Last refreshed: ${stamp} — ${rows.length} students loaded.`);
+      document.getElementById('dashboard').classList.remove('hidden');
+    } catch (err) {
+      setStatus(`Error: ${err.message}`, 'error');
+    } finally {
+      btn.disabled = false;
+      showSpinner(false);
+    }
+  }
+
+  function avg(arr) { return arr.length ? arr.reduce((a,b) => a+b, 0) / arr.length : 0; }
+  function round1(n) { return Math.round(n * 10) / 10; }
+
+  function render(rows) {
+    renderSummary(rows);
+    renderInsights(rows);
+    renderCharts(rows);
+  }
+
+  function renderSummary(rows) {
+    const total = rows.length;
+    const avgAtt = round1(avg(rows.map(r => r.Attendance_Pct)));
+    const avgFinal = round1(avg(rows.map(r => r.Final)));
+    const passed = rows.filter(r => r.Status === 'Pass').length;
+    const passRate = round1((passed / total) * 100);
+
+    const stats = [
+      { label: 'Total Students', value: total, sub: `${new Set(rows.map(r => r.Course)).size} courses` },
+      { label: 'Avg Attendance', value: `${avgAtt}%`, sub: '40 classes per course' },
+      { label: 'Avg Final Score', value: avgFinal, sub: 'Out of 100' },
+      { label: 'Pass Rate',      value: `${passRate}%`, sub: `${passed} pass / ${total - passed} fail` },
+    ];
+
+    document.getElementById('summary').innerHTML = stats.map(s => `
+      <div class="stat">
+        <div class="label">${s.label}</div>
+        <div class="value">${s.value}</div>
+        <div class="sub">${s.sub}</div>
+      </div>
+    `).join('');
+  }
+
+  function groupBy(rows, key) {
+    const out = {};
+    for (const r of rows) {
+      (out[r[key]] ||= []).push(r);
+    }
+    return out;
+  }
+
+  function renderInsights(rows) {
+    const byCourse = groupBy(rows, 'Course');
+    const courses = Object.keys(byCourse).sort();
+
+    // 1. Course with lowest pass rate
+    const passRates = courses.map(c => {
+      const list = byCourse[c];
+      const p = list.filter(r => r.Status === 'Pass').length / list.length * 100;
+      return { course: c, rate: p, fails: list.filter(r => r.Status === 'Fail').length, total: list.length };
+    });
+    const worstPass = passRates.slice().sort((a,b) => a.rate - b.rate)[0];
+    const bestPass = passRates.slice().sort((a,b) => b.rate - a.rate)[0];
+
+    // 2. Course with highest average final score
+    const courseAvgs = courses.map(c => ({
+      course: c,
+      avg: avg(byCourse[c].map(r => r.Final)),
+      att: avg(byCourse[c].map(r => r.Attendance_Pct)),
+    }));
+    const topCourse = courseAvgs.slice().sort((a,b) => b.avg - a.avg)[0];
+    const bottomCourse = courseAvgs.slice().sort((a,b) => a.avg - b.avg)[0];
+
+    // 3. Attendance-vs-final correlation
+    const attArr = rows.map(r => r.Attendance_Pct);
+    const finArr = rows.map(r => r.Final);
+    const r = pearson(attArr, finArr);
+
+    // 4. Top student
+    const topper = rows.slice().sort((a,b) => b.Final - a.Final)[0];
+
+    // 5. Low attendance count
+    const lowAtt = rows.filter(r => r.Attendance_Pct < 65).length;
+    const lowAttFailRate = round1(
+      rows.filter(r => r.Attendance_Pct < 65 && r.Status === 'Fail').length /
+      Math.max(1, lowAtt) * 100
+    );
+
+    const insights = [
+      {
+        kind: 'bad',
+        head: `${worstPass.course} has the most failures`,
+        body: `${worstPass.fails} of ${worstPass.total} students failed (${round1(100 - worstPass.rate)}% fail rate) — the highest in the cohort.`,
+      },
+      {
+        kind: 'good',
+        head: `${topCourse.course} leads in final scores`,
+        body: `Average final score of ${round1(topCourse.avg)} (vs ${round1(bottomCourse.avg)} in ${bottomCourse.course}). ${bestPass.course} has the highest pass rate at ${round1(bestPass.rate)}%.`,
+      },
+      {
+        kind: r >= 0.5 ? 'good' : 'warn',
+        head: `Attendance ${r >= 0.5 ? 'strongly' : 'moderately'} predicts final score`,
+        body: `Pearson correlation between attendance and final score is ${round1(r * 100) / 100} across all ${rows.length} students.`,
+      },
+      {
+        kind: 'warn',
+        head: `${lowAtt} students are below 65% attendance`,
+        body: `Of those, ${lowAttFailRate}% failed — versus a cohort-wide fail rate of ${round1(rows.filter(r => r.Status === 'Fail').length / rows.length * 100)}%.`,
+      },
+      {
+        kind: 'good',
+        head: `Top performer: ${topper.Name} (${topper.Course})`,
+        body: `Scored ${topper.Final} in the final with ${topper.Attendance_Pct}% attendance and ${topper.Mid_Sem} mid-sem.`,
+      },
+    ];
+
+    document.getElementById('insights').innerHTML = insights.map(i => `
+      <div class="insight ${i.kind}">
+        <div class="head">${i.head}</div>
+        <div class="body">${i.body}</div>
+      </div>
+    `).join('');
+  }
+
+  function pearson(x, y) {
+    const n = x.length;
+    const mx = avg(x), my = avg(y);
+    let num = 0, dx = 0, dy = 0;
+    for (let i = 0; i < n; i++) {
+      const a = x[i] - mx, b = y[i] - my;
+      num += a * b; dx += a*a; dy += b*b;
+    }
+    return num / Math.sqrt(dx * dy);
+  }
+
+  function destroyChart(key) {
+    if (charts[key]) { charts[key].destroy(); delete charts[key]; }
+  }
+
+  function renderCharts(rows) {
+    const byCourse = groupBy(rows, 'Course');
+    const courses = Object.keys(byCourse).sort();
+    const courseColors = courses.map(c => COURSE_COLORS[c] || '#5b8def');
+
+    // 1. Students per Course
+    destroyChart('chartCourseCount');
+    charts.chartCourseCount = new Chart(document.getElementById('chartCourseCount'), {
+      type: 'bar',
+      data: {
+        labels: courses,
+        datasets: [{
+          label: 'Students',
+          data: courses.map(c => byCourse[c].length),
+          backgroundColor: courseColors,
+          borderRadius: 6,
+        }],
+      },
+      options: barOpts(),
+    });
+
+    // 2. Pass vs Fail
+    const passed = rows.filter(r => r.Status === 'Pass').length;
+    const failed = rows.length - passed;
+    destroyChart('chartPassFail');
+    charts.chartPassFail = new Chart(document.getElementById('chartPassFail'), {
+      type: 'doughnut',
+      data: {
+        labels: ['Pass', 'Fail'],
+        datasets: [{
+          data: [passed, failed],
+          backgroundColor: ['#22c55e', '#ef4444'],
+          borderColor: '#121826',
+          borderWidth: 2,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { color: '#e6ecf5' } },
+        },
+        cutout: '60%',
+      },
+    });
+
+    // 3. Average Mid-Sem & Final by Course (grouped bar)
+    destroyChart('chartScoresByCourse');
+    charts.chartScoresByCourse = new Chart(document.getElementById('chartScoresByCourse'), {
+      type: 'bar',
+      data: {
+        labels: courses,
+        datasets: [
+          {
+            label: 'Mid-Sem',
+            data: courses.map(c => round1(avg(byCourse[c].map(r => r.Mid_Sem)))),
+            backgroundColor: '#5b8def',
+            borderRadius: 6,
+          },
+          {
+            label: 'Final',
+            data: courses.map(c => round1(avg(byCourse[c].map(r => r.Final)))),
+            backgroundColor: '#8b5cf6',
+            borderRadius: 6,
+          },
+        ],
+      },
+      options: barOpts({ legend: true, ymax: 100 }),
+    });
+
+    // 4. Attendance Distribution (buckets)
+    const buckets = ['<60', '60-69', '70-79', '80-89', '90-100'];
+    const bucketCounts = [0,0,0,0,0];
+    rows.forEach(r => {
+      const a = r.Attendance_Pct;
+      if (a < 60) bucketCounts[0]++;
+      else if (a < 70) bucketCounts[1]++;
+      else if (a < 80) bucketCounts[2]++;
+      else if (a < 90) bucketCounts[3]++;
+      else bucketCounts[4]++;
+    });
+    destroyChart('chartAttendanceDist');
+    charts.chartAttendanceDist = new Chart(document.getElementById('chartAttendanceDist'), {
+      type: 'bar',
+      data: {
+        labels: buckets,
+        datasets: [{
+          label: 'Students',
+          data: bucketCounts,
+          backgroundColor: ['#ef4444', '#f59e0b', '#facc15', '#84cc16', '#22c55e'],
+          borderRadius: 6,
+        }],
+      },
+      options: barOpts(),
+    });
+
+    // 5. Attendance vs Final scatter
+    destroyChart('chartScatter');
+    charts.chartScatter = new Chart(document.getElementById('chartScatter'), {
+      type: 'scatter',
+      data: {
+        datasets: [
+          {
+            label: 'Pass',
+            data: rows.filter(r => r.Status === 'Pass').map(r => ({ x: r.Attendance_Pct, y: r.Final, name: r.Name, course: r.Course })),
+            backgroundColor: 'rgba(34, 197, 94, 0.7)',
+          },
+          {
+            label: 'Fail',
+            data: rows.filter(r => r.Status === 'Fail').map(r => ({ x: r.Attendance_Pct, y: r.Final, name: r.Name, course: r.Course })),
+            backgroundColor: 'rgba(239, 68, 68, 0.85)',
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { color: '#e6ecf5' } },
+          tooltip: {
+            callbacks: {
+              label: ctx => `${ctx.raw.name} (${ctx.raw.course}): ${ctx.raw.x}% att, ${ctx.raw.y} final`,
+            },
+          },
+        },
+        scales: {
+          x: { title: { display: true, text: 'Attendance %', color: '#8a96ad' }, min: 40, max: 100, grid: { color: '#233048' }, ticks: { color: '#8a96ad' } },
+          y: { title: { display: true, text: 'Final Score', color: '#8a96ad' }, min: 0, max: 100, grid: { color: '#233048' }, ticks: { color: '#8a96ad' } },
+        },
+      },
+    });
+
+    // 6. Pass Rate by Course
+    const passRates = courses.map(c => {
+      const list = byCourse[c];
+      return round1(list.filter(r => r.Status === 'Pass').length / list.length * 100);
+    });
+    destroyChart('chartPassRate');
+    charts.chartPassRate = new Chart(document.getElementById('chartPassRate'), {
+      type: 'bar',
+      data: {
+        labels: courses,
+        datasets: [{
+          label: 'Pass Rate %',
+          data: passRates,
+          backgroundColor: passRates.map(p => p >= 90 ? '#22c55e' : p >= 80 ? '#84cc16' : p >= 70 ? '#f59e0b' : '#ef4444'),
+          borderRadius: 6,
+        }],
+      },
+      options: barOpts({ ymax: 100 }),
+    });
+  }
+
+  function barOpts(opts = {}) {
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: !!opts.legend, position: 'bottom', labels: { color: '#e6ecf5' } },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#8a96ad' } },
+        y: {
+          beginAtZero: true,
+          max: opts.ymax,
+          grid: { color: '#233048' },
+          ticks: { color: '#8a96ad' },
+        },
+      },
+    };
+  }
+
+  document.getElementById('loadBtn').addEventListener('click', loadData);
+  document.getElementById('sheetUrl').addEventListener('keydown', e => {
+    if (e.key === 'Enter') loadData();
+  });
+</script>
+</body>
+</html>
